@@ -36,6 +36,7 @@ defmodule ClusterEC2.Strategy.Tags do
   use Cluster.Strategy
   import Cluster.Logger
   import SweetXml, only: [sigil_x: 2]
+  require Logger
 
   alias Cluster.Strategy.State
 
@@ -50,6 +51,7 @@ defmodule ClusterEC2.Strategy.Tags do
   # libcluster ~> 3.0
   @impl GenServer
   def init([%State{} = state]) do
+    Process.flag(:trap_exit, true)
     state = state |> Map.put(:meta, MapSet.new())
 
     {:ok, load(state)}
@@ -57,6 +59,8 @@ defmodule ClusterEC2.Strategy.Tags do
 
   # libcluster ~> 2.0
   def init(opts) do
+    Process.flag(:trap_exit, true)
+
     state = %State{
       topology: Keyword.fetch!(opts, :topology),
       connect: Keyword.fetch!(opts, :connect),
@@ -76,6 +80,18 @@ defmodule ClusterEC2.Strategy.Tags do
 
   def handle_info(:load, %State{} = state) do
     {:noreply, load(state)}
+  end
+
+  def handle_info({:EXIT, _, {:fatal, {:expected_element_start_tag, _file, _line, _col}}}, state) do
+    {:noreply, state}
+  end
+
+  def handle_info({:EXIT, _, {:fatal, {{:endtag_does_not_match, _}, _file, _line, _col}}}, state) do
+    {:noreply, state}
+  end
+
+  def handle_info({:EXIT, _, reason}, _state) do
+    {:stop, reason}
   end
 
   def handle_info(_, state) do
@@ -135,15 +151,26 @@ defmodule ClusterEC2.Strategy.Tags do
       tag_name != nil and tag_value != nil and app_prefix != nil and instance_id != "" and region != "" ->
         params = [filters: ["tag:#{tag_name}": fetch_tag_value(tag_name, tag_value), "instance-state-name": "running"]]
         request = ExAws.EC2.describe_instances(params)
-        require Logger
         if show_debug?, do: Logger.debug("#{inspect(request)}")
 
         case ExAws.request(request, region: region) do
           {:ok, %{body: body}} ->
             resp =
-              body
-              |> SweetXml.xpath(ip_xpath(Keyword.get(config, :ip_type, :private)))
-              |> ip_to_nodename.(app_prefix)
+              try do
+                body
+                |> SweetXml.xpath(ip_xpath(Keyword.get(config, :ip_type, :private)))
+                |> ip_to_nodename.(app_prefix)
+              rescue
+                e ->
+                  Logger.warn("request to EC2 describe_instances was: #{inspect(request)}")
+                  Logger.error("get_nodes rescue - Got unexpected (successful) response from AWS: #{inspect(body)}")
+                  reraise e, __STACKTRACE__
+              catch
+                e ->
+                  Logger.warn("request to EC2 describe_instances was: #{inspect(request)}")
+                  Logger.error("get_nodes catch - Got unexpected (successful) response from AWS: #{inspect(body)}")
+                  reraise e, __STACKTRACE__
+              end
 
             {:ok, MapSet.new(resp)}
 
@@ -177,8 +204,27 @@ defmodule ClusterEC2.Strategy.Tags do
 
   defp local_instance_tags(body, region) do
     case ExAws.request(body, region: region) do
-      {:ok, body} -> extract_tags(body)
-      {:error, _} -> %{}
+      {:ok, body} ->
+        try do
+          extract_tags(body)
+        rescue
+          e ->
+            Logger.error(
+              "defp local_instance_tags rescue - Got unexpected (successful) response from AWS: #{inspect(body)}"
+            )
+
+            reraise e, __STACKTRACE__
+        catch
+          e ->
+            Logger.error(
+              "defp local_instance_tags catch - Got unexpected (successful) response from AWS: #{inspect(body)}"
+            )
+
+            reraise e, __STACKTRACE__
+        end
+
+      {:error, _} ->
+        %{}
     end
   end
 

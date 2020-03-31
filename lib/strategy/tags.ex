@@ -147,41 +147,34 @@ defmodule ClusterEC2.Strategy.Tags do
         if show_debug?, do: Logger.debug("#{inspect(request)}")
 
         case ExAws.request(request, region: region) do
+          {:ok, %{body: ""}} ->
+            {:ok, MapSet.new()}
+
           {:ok, %{body: body}} ->
-            resp =
-              try do
+            try do
+              resp =
                 body
                 |> SweetXml.xpath(ip_xpath(Keyword.get(config, :ip_type, :private)))
                 |> ip_to_nodename.(app_prefix)
-              rescue
-                e ->
-                  Logger.warn(
-                    "got an exception: #{inspect(e)} - request to EC2 describe_instances was: #{inspect(request)}",
-                    event: %{aws_unexpected_exception: inspect(e), aws_request: inspect(request)}
-                  )
 
-                  Logger.error("get_nodes rescue - Got unexpected (successful) response from AWS: #{inspect(body)}",
-                    event: %{
-                      aws_response: inspect(body)
-                    }
-                  )
-              catch
-                :exit, e ->
-                  Logger.warn(
-                    "Got fatal error: #{inspect(e)} from xmerl - request to EC2 describe_instances was: #{
-                      inspect(request)
-                    }",
-                    event: %{aws_request: inspect(request)}
-                  )
+              {:ok, MapSet.new(resp)}
+            rescue
+              e ->
+                Logger.warn(
+                  "Got unexpected exception",
+                  event: %{aws_request: inspect(request), aws_response_body: inspect(body), error: inspect(e)}
+                )
 
-                  Logger.error("get_nodes catch - unexpected (successful) response from AWS: #{inspect(body)}",
-                    event: %{
-                      aws_response: inspect(body)
-                    }
-                  )
-              end
+                {:ok, MapSet.new()}
+            catch
+              :exit, e ->
+                Logger.warn(
+                  "Got fatal error from xmerl",
+                  event: %{aws_request: inspect(request), aws_response_body: inspect(body), error: inspect(e)}
+                )
 
-            {:ok, MapSet.new(resp)}
+                {:ok, MapSet.new()}
+            end
 
           _ ->
             {:error, []}
@@ -218,24 +211,20 @@ defmodule ClusterEC2.Strategy.Tags do
           extract_tags(body)
         rescue
           e ->
-            Logger.warn("Got unexpected exception: #{inspect(e)}")
-
-            Logger.error(
-              "defp local_instance_tags rescue - Got unexpected (successful) response from AWS: #{inspect(body)}",
-              event: %{
-                aws_response: inspect(body)
-              }
+            Logger.warn(
+              "Got unexpected exception",
+              event: %{aws_response_body: inspect(body), error: inspect(e)}
             )
+
+            %{}
         catch
           :exit, e ->
-            Logger.warn("Got fatal error: #{inspect(e)} from xmerl")
-
-            Logger.error(
-              "defp local_instance_tags catch - Got unexpected (successful) response from AWS: #{inspect(body)}",
-              event: %{
-                aws_response: inspect(body)
-              }
+            Logger.warn(
+              "Got fatal error from xmerl",
+              event: %{aws_response_body: inspect(body), error: inspect(e)}
             )
+
+            %{}
         end
 
       {:error, _} ->

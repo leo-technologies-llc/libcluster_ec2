@@ -74,24 +74,17 @@ defmodule ClusterEC2.Strategy.Tags do
   end
 
   @impl GenServer
+  def terminate(reason, _state) do
+    Logger.warn("#{__MODULE__} terminating, reason: #{inspect(reason)}")
+  end
+
+  @impl GenServer
   def handle_info(:timeout, state) do
     handle_info(:load, state)
   end
 
   def handle_info(:load, %State{} = state) do
     {:noreply, load(state)}
-  end
-
-  def handle_info({:EXIT, _, {:fatal, {:expected_element_start_tag, _file, _line, _col}}}, state) do
-    {:noreply, state}
-  end
-
-  def handle_info({:EXIT, _, {:fatal, {{:endtag_does_not_match, _}, _file, _line, _col}}}, state) do
-    {:noreply, state}
-  end
-
-  def handle_info({:EXIT, _, reason}, _state) do
-    {:stop, reason}
   end
 
   def handle_info(_, state) do
@@ -162,14 +155,30 @@ defmodule ClusterEC2.Strategy.Tags do
                 |> ip_to_nodename.(app_prefix)
               rescue
                 e ->
-                  Logger.warn("request to EC2 describe_instances was: #{inspect(request)}")
-                  Logger.error("get_nodes rescue - Got unexpected (successful) response from AWS: #{inspect(body)}")
-                  reraise e, __STACKTRACE__
+                  Logger.warn(
+                    "got an exception: #{inspect(e)} - request to EC2 describe_instances was: #{inspect(request)}",
+                    event: %{aws_unexpected_exception: inspect(e), aws_request: inspect(request)}
+                  )
+
+                  Logger.error("get_nodes rescue - Got unexpected (successful) response from AWS: #{inspect(body)}",
+                    event: %{
+                      aws_response: inspect(body)
+                    }
+                  )
               catch
-                e ->
-                  Logger.warn("request to EC2 describe_instances was: #{inspect(request)}")
-                  Logger.error("get_nodes catch - Got unexpected (successful) response from AWS: #{inspect(body)}")
-                  reraise e, __STACKTRACE__
+                :exit, e ->
+                  Logger.warn(
+                    "Got fatal error: #{inspect(e)} from xmerl - request to EC2 describe_instances was: #{
+                      inspect(request)
+                    }",
+                    event: %{aws_request: inspect(request)}
+                  )
+
+                  Logger.error("get_nodes catch - unexpected (successful) response from AWS: #{inspect(body)}",
+                    event: %{
+                      aws_response: inspect(body)
+                    }
+                  )
               end
 
             {:ok, MapSet.new(resp)}
@@ -209,18 +218,24 @@ defmodule ClusterEC2.Strategy.Tags do
           extract_tags(body)
         rescue
           e ->
-            Logger.error(
-              "defp local_instance_tags rescue - Got unexpected (successful) response from AWS: #{inspect(body)}"
-            )
+            Logger.warn("Got unexpected exception: #{inspect(e)}")
 
-            reraise e, __STACKTRACE__
+            Logger.error(
+              "defp local_instance_tags rescue - Got unexpected (successful) response from AWS: #{inspect(body)}",
+              event: %{
+                aws_response: inspect(body)
+              }
+            )
         catch
-          e ->
-            Logger.error(
-              "defp local_instance_tags catch - Got unexpected (successful) response from AWS: #{inspect(body)}"
-            )
+          :exit, e ->
+            Logger.warn("Got fatal error: #{inspect(e)} from xmerl")
 
-            reraise e, __STACKTRACE__
+            Logger.error(
+              "defp local_instance_tags catch - Got unexpected (successful) response from AWS: #{inspect(body)}",
+              event: %{
+                aws_response: inspect(body)
+              }
+            )
         end
 
       {:error, _} ->

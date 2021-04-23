@@ -29,6 +29,21 @@ use Mix.Config
 #
 #     import_config "#{Mix.env}.exs"
 
+config :libcluster,
+  topologies: [
+    example: [
+      strategy: ClusterEC2.Strategy.Tags,
+      config: [
+        ec2_tagname: System.get_env("EC2_TAGNAME"),
+        ec2_tagvalue: System.get_env("EC2_TAGVALUE"),
+        app_prefix: System.get_env("APP_PREFIX"),
+        show_debug: false
+      ]
+    ]
+  ]
+
+config :tesla, adapter: Tesla.Adapter.Hackney
+
 if Mix.env() == :test do
   config :ex_aws,
     access_key_id: "xxx",

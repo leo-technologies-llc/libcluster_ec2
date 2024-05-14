@@ -43,7 +43,6 @@ defmodule ClusterEC2.Strategy.Tags do
   @default_polling_interval 5_000
 
   def start_link(opts) do
-    Application.ensure_all_started(:tesla)
     Application.ensure_all_started(:ex_aws)
     GenServer.start_link(__MODULE__, opts)
   end
@@ -94,7 +93,6 @@ defmodule ClusterEC2.Strategy.Tags do
   defp load(%State{topology: topology, connect: connect, disconnect: disconnect, list_nodes: list_nodes} = state) do
     case get_nodes(state) do
       {:ok, new_nodelist} ->
-        added = MapSet.difference(new_nodelist, state.meta)
         removed = MapSet.difference(state.meta, new_nodelist)
 
         new_nodelist =
@@ -110,7 +108,7 @@ defmodule ClusterEC2.Strategy.Tags do
           end
 
         new_nodelist =
-          case Cluster.Strategy.connect_nodes(topology, connect, list_nodes, MapSet.to_list(added)) do
+          case Cluster.Strategy.connect_nodes(topology, connect, list_nodes, MapSet.to_list(new_nodelist)) do
             :ok ->
               new_nodelist
 
@@ -247,7 +245,7 @@ defmodule ClusterEC2.Strategy.Tags do
     do: ~x"//DescribeInstancesResponse/reservationSet/item/instancesSet/item/privateIpAddress/text()"ls
 
   defp ip_xpath(:public),
-    do: ~x"//DescribeInstancesResponse/reservationSet/item/instancesSet/item/IpAddress/text()"ls
+    do: ~x"//DescribeInstancesResponse/reservationSet/item/instancesSet/item/ipAddress/text()"ls
 
   defp fetch_tag_value(_k, v) when is_function(v, 0), do: v.()
   defp fetch_tag_value(k, v) when is_function(v, 1), do: v.(k)

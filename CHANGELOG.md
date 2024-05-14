@@ -1,3 +1,13 @@
+v0.8.1
+- Bug fix: relax ex_aws requirement https://github.com/kyleaa/libcluster_ec2/pull/34
+
+v0.8.0
+- Enhancement: Support IMDSv2 (Requires ExAws 2.3.2 minimum) https://github.com/kyleaa/libcluster_ec2/pull/33
+
+v0.7.0
+- Enhancement: auto reconnect when disconnected by some reason https://github.com/kyleaa/libcluster_ec2/pull/27
+- Dependency Cleanup: Remove Poison dependency https://github.com/kyleaa/libcluster_ec2/pull/23
+
 v0.6.0
 - Enhancement: block on startup while attempting first load https://github.com/kyleaa/libcluster_ec2/pull/20
 - Enhancement: allow optional disable of debug logging https://github.com/kyleaa/libcluster_ec2/pull/21/files
